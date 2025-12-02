@@ -19,15 +19,16 @@ import ox.*
 import ox.channels.Channel
 import ox.channels.ChannelClosed.Done
 
-object Main extends OxApp.Simple:
+object Main extends OxApp.Simple {
   val apikeyEnv = "OPENAI_API_KEY"
   val baseUrl = "https://api.ai.sakura.ad.jp/v1/"
   val modelName = "gpt-oss-120b"
 
   def run(using Ox): Unit = {
     val OPENAI_API_KEY = sys.env.get(apikeyEnv)
-    if OPENAI_API_KEY.isEmpty then
+    if (OPENAI_API_KEY.isEmpty) {
       throw Exception(s"Enviroment varible $$$apikeyEnv is not defined")
+    }
 
     val model =
       OpenAiStreamingChatModel
@@ -37,37 +38,20 @@ object Main extends OxApp.Simple:
         .modelName(modelName)
         .build()
 
+    val reverser = new StringReverser()
+    val assistant = AiServices
+      .builder(classOf[Assistant])
+      .streamingChatModel(model)
+      .chatMemory(MessageWindowChatMemory.withMaxMessages(10))
+      .tools(reverser)
+      .build()
+
     val c = Channel.rendezvous[String]
-    val srh = new StreamingChatResponseHandler {
-      override def onPartialResponse(token: String): Unit = c.send(token)
-      def onCompleteResponse(response: ChatResponse): Unit = c.done()
-      def onError(error: Throwable): Unit = c.error(error)
-    }
 
-    supervised:
-      fork:
-        class StringReverser {
-          @Tool(Array("Reverses a given string"))
-          def reverseString(input: String): String = {
-            input.reverse.toUpperCase()
-          }
-        }
-
-        trait Assistant {
-          @UserMessage(Array("{{it}}"))
-          def chat(userMessage: String): TokenStream
-        }
-
+    supervised {
+      fork {
         val prompt =
           "以下の文章を反転させてください。 'The quick brown fox jumps over the lazy dog!'"
-
-        val reverser = new StringReverser()
-        val assistant = AiServices
-          .builder(classOf[Assistant])
-          .streamingChatModel(model)
-          .chatMemory(MessageWindowChatMemory.withMaxMessages(10))
-          .tools(reverser)
-          .build()
 
         assistant
           .chat(prompt)
@@ -75,10 +59,11 @@ object Main extends OxApp.Simple:
           .onPartialResponse(r => c.send(r))
           .onCompleteResponse(_ => c.done())
           .start()
+      }
 
-      forkUser:
-        repeatUntil:
-          c.receiveOrClosed() match
+      forkUser {
+        repeatUntil {
+          c.receiveOrClosed() match {
             case ox.channels.ChannelClosed.Error(reason) =>
               println("Error occurred")
               println(reason.getMessage())
@@ -89,4 +74,21 @@ object Main extends OxApp.Simple:
             case s: String =>
               print(s)
               false
+          }
+        }
+      }
+    }
   }
+}
+
+class StringReverser {
+  @Tool(Array("Reverses a given string"))
+  def reverseString(input: String): String = {
+    input.reverse.toUpperCase()
+  }
+}
+
+trait Assistant {
+  @UserMessage(Array("{{it}}"))
+  def chat(userMessage: String): TokenStream
+}
