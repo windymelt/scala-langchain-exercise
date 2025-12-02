@@ -46,7 +46,6 @@ object Main extends OxApp.Simple:
 
     supervised:
       fork:
-        // 文字列を反転させるツール
         class StringReverser {
           @Tool(Array("Reverses a given string"))
           def reverseString(input: String): String = {
@@ -54,17 +53,14 @@ object Main extends OxApp.Simple:
           }
         }
 
-        // AiServices用のアシスタントインターフェース
         trait Assistant {
           @UserMessage(Array("{{it}}"))
           def chat(userMessage: String): TokenStream
         }
 
-        // ツールを使用するようにモデルに指示するプロンプト
         val prompt =
           "以下の文章を反転させてください。 'The quick brown fox jumps over the lazy dog!'"
 
-        // AiServicesを構築してツールを統合
         val reverser = new StringReverser()
         val assistant = AiServices
           .builder(classOf[Assistant])
