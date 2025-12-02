@@ -1,0 +1,5 @@
+.env.keys
+.bsp
+.metals
+.scala-build
+.vscode
