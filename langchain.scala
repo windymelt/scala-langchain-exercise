@@ -1,16 +1,16 @@
 //> using scala 3.7
 //> using platform jvm
-//> using dep dev.langchain4j:langchain4j:0.30.0
-//> using dep dev.langchain4j:langchain4j-open-ai:0.30.0
+//> using dep dev.langchain4j:langchain4j:1.9.1
+//> using dep dev.langchain4j:langchain4j-open-ai:1.9.1
 //> using dep com.softwaremill.ox::core:1.0.2
+//> using option -Wunused:imports
+//> using scalafix.dep ch.epfl.scala::scalafix-core:0.13.0
 
-import ox.*
-import dev.langchain4j.model.openai.OpenAiChatModel
-import dev.langchain4j.model.StreamingResponseHandler
-import dev.langchain4j.data.message.AiMessage
-import ox.channels.Channel
-import dev.langchain4j.model.output.Response
+import dev.langchain4j.model.chat.response.ChatResponse
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel
+import ox.*
+import ox.channels.Channel
 import ox.channels.ChannelClosed.Done
 
 object Main extends OxApp.Simple:
@@ -32,16 +32,15 @@ object Main extends OxApp.Simple:
         .build()
 
     val c = Channel.rendezvous[String]
-    val srh = new StreamingResponseHandler[AiMessage] {
-      def onNext(token: String): Unit = c.send(token)
-      override def onComplete(response: Response[AiMessage]): Unit =
-        c.done()
+    val srh = new StreamingChatResponseHandler {
+      override def onPartialResponse(token: String): Unit = c.send(token)
+      def onCompleteResponse(response: ChatResponse): Unit = c.done()
       def onError(error: Throwable): Unit = c.error(error)
     }
 
     supervised:
       fork:
-        model.generate("LangChainとは何ですか？", srh)
+        model.chat("LangChainとは何ですか？", srh)
 
       forkUser:
         repeatUntil:
