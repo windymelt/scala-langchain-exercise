@@ -80,18 +80,17 @@ object Main extends OxApp.Simple:
           .onCompleteResponse(_ => c.done())
           .start()
 
-    forkUser:
-      repeatUntil:
-        c.receiveOrClosed() match
-          case ox.channels.ChannelClosed.Error(reason) =>
-            println("Error occurred")
-            println(reason.getMessage())
-            true
-          case Done =>
-            println("*")
-            true
-          case s: String =>
-            print(s)
-            false
-        end match
+      forkUser:
+        repeatUntil:
+          c.receiveOrClosed() match
+            case ox.channels.ChannelClosed.Error(reason) =>
+              println("Error occurred")
+              println(reason.getMessage())
+              true
+            case Done =>
+              println("*")
+              true
+            case s: String =>
+              print(s)
+              false
   }
