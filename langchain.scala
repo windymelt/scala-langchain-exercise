@@ -5,10 +5,16 @@
 //> using dep com.softwaremill.ox::core:1.0.2
 //> using option -Wunused:imports
 //> using scalafix.dep ch.epfl.scala::scalafix-core:0.13.0
+//> using dep dev.langchain4j:langchain4j-core:1.9.1
 
+import dev.langchain4j.agent.tool.Tool
+import dev.langchain4j.memory.chat.MessageWindowChatMemory
 import dev.langchain4j.model.chat.response.ChatResponse
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel
+import dev.langchain4j.service.AiServices
+import dev.langchain4j.service.TokenStream
+import dev.langchain4j.service.UserMessage
 import ox.*
 import ox.channels.Channel
 import ox.channels.ChannelClosed.Done
@@ -16,7 +22,7 @@ import ox.channels.ChannelClosed.Done
 object Main extends OxApp.Simple:
   val apikeyEnv = "OPENAI_API_KEY"
   val baseUrl = "https://api.ai.sakura.ad.jp/v1/"
-  val modelName = "llm-jp-3.1-8x13b-instruct4"
+  val modelName = "gpt-oss-120b"
 
   def run(using Ox): Unit = {
     val OPENAI_API_KEY = sys.env.get(apikeyEnv)
@@ -40,20 +46,52 @@ object Main extends OxApp.Simple:
 
     supervised:
       fork:
-        model.chat("LangChainとは何ですか？", srh)
+        // 文字列を反転させるツール
+        class StringReverser {
+          @Tool(Array("Reverses a given string"))
+          def reverseString(input: String): String = {
+            input.reverse.toUpperCase()
+          }
+        }
 
-      forkUser:
-        repeatUntil:
-          c.receiveOrClosed() match
-            case ox.channels.ChannelClosed.Error(reason) =>
-              println("Error occurred")
-              println(reason.getMessage())
-              true
-            case Done =>
-              println("*")
-              true
-            case s: String =>
-              print(s)
-              false
+        // AiServices用のアシスタントインターフェース
+        trait Assistant {
+          @UserMessage(Array("{{it}}"))
+          def chat(userMessage: String): TokenStream
+        }
 
+        // ツールを使用するようにモデルに指示するプロンプト
+        val prompt =
+          "以下の文章を反転させてください。 'The quick brown fox jumps over the lazy dog!'"
+
+        // AiServicesを構築してツールを統合
+        val reverser = new StringReverser()
+        val assistant = AiServices
+          .builder(classOf[Assistant])
+          .streamingChatModel(model)
+          .chatMemory(MessageWindowChatMemory.withMaxMessages(10))
+          .tools(reverser)
+          .build()
+
+        assistant
+          .chat(prompt)
+          .onError(e => c.error(e))
+          .onPartialResponse(r => c.send(r))
+          .onCompleteResponse(_ => c.done())
+          .start()
+
+    forkUser:
+      repeatUntil:
+        c.receiveOrClosed() match
+          case ox.channels.ChannelClosed.Error(reason) =>
+            println("Error occurred")
+            println(reason.getMessage())
+            true
+          case Done =>
+            println("*")
+            true
+          case s: String =>
+            print(s)
+            false
+        end match
   }
